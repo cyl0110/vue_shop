@@ -62,12 +62,12 @@
     </el-card>
 
     <!-- 分配权限的对话框-->
-    <el-dialog title="分配权限" :visible.sync="setRightDialogVisible" width="50%">
+    <el-dialog title="分配权限" :visible.sync="setRightDialogVisible" width="50%" @close="serRightDialogClosed">
       <!-- 树形控件-->
-      <el-tree :data="rightslist" :props="treeProps" show-checkbox node-key="id" default-expand-all :default-checked-keys="defKeys"></el-tree>
+      <el-tree :data="rightslist" :props="treeProps" show-checkbox node-key="id" default-expand-all :default-checked-keys="defKeys" ref="treeRef"></el-tree>
       <span slot="footer" class="dialog-footer">
         <el-button @click="setRightDialogVisible = false">取 消</el-button>
-        <el-button type="primary" @click="setRightDialogVisible = false">确 定</el-button>
+        <el-button type="primary" @click="allotRight">确 定</el-button>
       </span>
     </el-dialog>
 
@@ -155,7 +155,9 @@ export default {
         children: 'children'
       },
       // 默认选中的节点 Id 值数组
-      defKeys: []
+      defKeys: [],
+      // 当前即将分配权限的角色id
+      roleId: ''
     }
   },
   created () {
@@ -280,6 +282,7 @@ export default {
     },
     // 展示分配权限的对话框
     async showSetRightDialog (role) {
+      this.roleId = role.id
       // 获取所有权限的数据
       const { data: res } = await this.$http.get('rights/tree')
 
@@ -287,26 +290,49 @@ export default {
         return this.$message.error('获取权限数据失败!')
       }
 
-      // // 把获取到的权限数据保存到 data 中
-      // this.rightslist = res.data
-      // console.log(this.rightslist)
+      // 把获取到的权限数据保存到 data 中
+      this.rightslist = res.data
+      console.log(this.rightslist)
 
       // 递归获取三级节点的Id
       this.getLeafKeys(role,
-        this.difKeys)
+        this.defKeys)
 
       this.setRightDialogVisible = true
-    }
+    },
     // 通过递归的形式，获取角色下所有三级权限的id，并保存到 defKeys 中
-    // getLeafKeys (node, arr) {
-    //   // 如果当前 node 节点不包含 children 属性，则是三级节点
-    //   if (!node.children) {
-    //     return arr.push(node.id)
-    //   }
+    getLeafKeys (node, arr) {
+      // 如果当前 node 节点不包含 children 属性，则是三级节点
+      if (!node.children) {
+        return arr.push(node.id)
+      }
 
-    //   node.children.forEach(item =>
-    //     this.getLeafKeys(item, arr))
-    // }
+      node.children.forEach(item =>
+        this.getLeafKeys(item, arr))
+    },
+    // 监听分配权限对话框的关闭事件
+    serRightDialogClosed () {
+      this.defKeys = []
+    },
+    // 点击为角色分配权限
+    async allotRight () {
+      const keys = [
+        ...this.$refs.treeRef.getCheckedKeys(),
+        ...this.$refs.treeRef.getHalfCheckedKeys()
+      ]
+
+      const idStr = keys.join(',')
+
+      const { data: res } = await this.$http.post(`roles/${this.roleId}/rights`, { rids: idStr })
+
+      if (res.meta.status !== 200) {
+        return this.$message.error('分配权限失败!')
+      }
+
+      this.$message.success('分配权限成功')
+      this.getRolesList()
+      this.setRightDialogVisible = false
+    }
 
   }
 
