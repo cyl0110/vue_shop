@@ -33,9 +33,9 @@
         </template>
 
         <!-- 操作 -->
-        <template slot="opt" slot-scope="">
-          <el-button type="primary" icon="el-icon-edit" size="mini">编辑</el-button>
-          <el-button type="danger" icon="el-icon-delete" size="mini">删除</el-button>
+        <template slot="opt" slot-scope="scope">
+          <el-button type="primary" icon="el-icon-edit" size="mini" @click="showEditDialog(scope.row.cat_id)">编辑</el-button>
+          <el-button type=" danger" icon="el-icon-delete" size="mini" @click="removeUserById(scope.row.cat_id)">删除</el-button>
         </template>
       </tree-table>
 
@@ -45,22 +45,40 @@
     </el-card>
 
     <!-- 添加分类的对话框 -->
-    <el-dialog title="添加分类" :visible.sync="addCateDialogVisible" width="50%">
+    <el-dialog title="添加分类" :visible.sync="addCateDialogVisible" width="50%" @close="addCateDialogClosed">
       <!-- 添加分类的表单 -->
       <el-form :model="addCateForm" :rules="addCateFormRules" ref="addCateFormRef" label-width="100px">
         <el-form-item label="分类名称：" prop="cat_name">
           <el-input v-model="addCateForm.cat_name"></el-input>
         </el-form-item>
         <el-form-item label="父级分类：">
-          <el-cascader v-model="value" :options="options" :props="{ expandTrigger: 'hover' }" @change="handleChange"></el-cascader>
+          <!-- options 用来指定数据源 -->
+          <!-- props 用来指定配置对象 -->
+          <el-cascader expand-trigger="hover" :options="parentCateList" :props="cascaderProps" v-model="selectedKeys" @change="parentCateChanged" clearable>
+          </el-cascader>
         </el-form-item>
       </el-form>
 
       <span slot="footer" class="dialog-footer">
         <el-button @click="addCateDialogVisible = false">取 消</el-button>
-        <el-button type="primary" @click="addCateDialogVisible = false">确 定</el-button>
+        <el-button type="primary" @click="addCate">确 定</el-button>
       </span>
     </el-dialog>
+
+    <!-- 修改角色的对话框-->
+    <el-dialog title="修改分类名称" :visible.sync="editDialogVisible" width="50%" @click="editDialogClosed">
+      <el-form :model="editForm" :rules="editFormRules" ref="editFormRef" label-width="70px">
+        <el-form-item label="商品名称" prop="cat_name">
+          <el-input v-model="editForm.cat_name"></el-input>
+        </el-form-item>
+      </el-form>
+
+      <span slot="footer" class="dialog-footer">
+        <el-button @click="editDialogVisible = false">取 消</el-button>
+        <el-button type="primary" @click="editUserInfo">确 定</el-button>
+      </span>
+    </el-dialog>
+
   </div>
 </template>
 
@@ -124,8 +142,27 @@ export default {
           { required: true, message: '请输入分类名称', trigger: 'blur' }
         ]
       },
+      // 修改表单的验证规则对象
+      editFormRules: {
+        roleName: [
+          { required: true, message: '请输入角色名称', trigger: 'blur' },
+          { min: 0, max: 10, message: '用户名的长度最多为10个字符', trigger: 'blur' }
+        ]
+      },
       // 父级分类的列表
-      parentCateList: []
+      parentCateList: [],
+      // 指定级联选择器的配置对象
+      cascaderProps: {
+        value: 'cat_id',
+        label: 'cat_name',
+        children: 'children'
+      },
+      // 选中的父级分类的Id数组
+      selectedKeys: [],
+      // 查询到的用户信息对象
+      editForm: {},
+      // 控制编辑分类对话框的显示与隐藏
+      editDialogVisible: false
     }
   },
   created () {
@@ -175,7 +212,117 @@ export default {
       console.log(res.data)
 
       this.parentCateList = res.data
+    },
+    // 选择项发生变化触发这个函数
+    parentCateChanged () {
+      console.log(this.selectedKeys)
+      // 如果 selectedKeys 数组中的 length 大于0，证明选中的父级分类
+      // 反之，就说明没有选中任何父级分类
+      if (this.selectedKeys.length > 0) {
+        // 父级分类的Id
+        this.addCateForm.cat_pid = this.selectedKeys[
+          this.selectedKeys.length - 1
+        ]
+        // 为当前分类的等级赋值
+        this.addCateForm.cat_level = this.selectedKeys.length
+      } else {
+        // 父级分类的Id
+        this.addCateForm.cat_pid = 0
+        // 为当前分类的等级赋值
+        this.addCateForm.cat_level = 0
+      }
+    },
+    // 点击按钮，添加新的分类
+    addCate () {
+      this.$refs.addCateFormRef.validate(async valid => {
+        if (!valid) return
+        const { data: res } = await this.$http.post(
+          'categories',
+          this.addCateForm
+        )
+
+        if (res.meta.status !== 201) {
+          return this.$message.error('添加分类失败！')
+        }
+
+        this.$message.success('添加分类成功！')
+        this.getCateList()
+        this.addCateDialogVisible = false
+      })
+    },
+    // 监听对话框的关闭事件，重置表单数据
+    addCateDialogClosed () {
+      this.$refs.addCateFormRef.resetFields()
+      this.selectedKeys = []
+      this.addCateForm.cat_level = 0
+      this.addCateForm.cat_pid = 0
+    },
+    // showEditDialog (catid) {
+    //   console.log(catid)
+    //   this.editDialogVisible = true
+    // }
+
+    // 展示编辑角色的对话框
+    async showEditDialog (id) {
+      console.log(id)
+      const { data: res } = await this.$http.get('categories/' + id)
+
+      if (res.meta.status !== 200) {
+        return this.$message.error('查询角色信息失败')
+      }
+
+      this.editForm = res.data
+      this.editDialogVisible = true
+    },
+    // 监听修改角色对话框的关闭事件
+    editDialogClosed () {
+      this.$refs.editFormRef.resetFields()
+    },
+    // 修改角色信息并提交
+    editUserInfo () {
+      this.$refs.editFormRef.validate(async valid => {
+        if (!valid) return
+        // 发起修改角色信息的数据请求
+        const { data: res } = await this.$http.put('categories/' + this.editForm.cat_id, {
+          cat_name: this.editForm.cat_name
+        })
+
+        if (res.meta.status !== 200) {
+          return this.$message.error('更新角色信息失败')
+        }
+
+        // 关闭对话框、
+        this.editDialogVisible = false
+        // 刷新角色列表
+        this.getCateList()
+        // 提示修改成功
+        this.$message.success('更新角色信息成功')
+      })
+    },
+    // 根据Id删除对应的角色信息
+    async removeUserById (id) {
+      // 弹框询问角色是否删除数据
+      const confirmResult = await this.$confirm('此操作将永久删除该文件, 是否继续?', '提示', {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }).catch(err => err)
+      // 如果用户确认删除，则返回值为字符串 confirm
+      // 如果用户取消了删除，则返回值为字符串 confirm
+      if (confirmResult !== 'confirm') {
+        return this.$message.info('已经取消删除')
+      }
+
+      const { data: res } = await this.$http.delete('categories/' + id)
+
+      if (res.meta.status !== 200) {
+        return this.$message.error('删除角色失败')
+      }
+
+      this.$message.success('删除角色成功')
+      this.getCateList()
     }
+
   }
 }
 </script>
@@ -183,5 +330,9 @@ export default {
 <style scoped lang="less">
   .treeTable {
     margin-top: 15px;
+  }
+
+  .el-cascader {
+    width: 100%;
   }
 </style>
